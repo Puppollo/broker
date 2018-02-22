@@ -83,12 +83,19 @@ func (b *Broker) Close() error {
 // Subscribe for subjects, if callback return not nil, then publish to message.reply
 func (b *Broker) Subscribe(subject string, callback func([]byte) []byte) (unsubscribe func() error, err error) {
 	sub, err := b.connection.Subscribe(subject, func(m *n.Msg) {
-		if len(b.pool) == 0 && !b.ProcessOnThreshold {
-			// no free workers
-			// TODO logging
-			return
+		var wrkr *worker
+		if !b.ProcessOnThreshold {
+			select {
+			case wrkr = <-b.pool:
+			default:
+				// no free workers
+				// TODO logging
+				return
+			}
+		} else {
+			wrkr = <-b.pool // lock before worker are freed
 		}
-		wrkr := <-b.pool // lock before worker are freed
+
 		go func(w *worker) {
 			if w == nil {
 				// pool closed
